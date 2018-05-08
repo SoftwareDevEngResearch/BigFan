@@ -11,22 +11,30 @@ Algorithm Options
 
 import numpy as np
 import random
-
-
-# NOTES TO ANNALISE:
-#     Change inputs to EPS
-#     Change inputs to GA
+import matplotlib.pyplot as plt
 
 
 def Check_Interference(xlocation, ylocation, index, turbine_sep_distance):
-    interference = False  # Is a constraint violated?
+    """Check interference between turbines
+
+    Args:
+        xlocation: list of x-coordinates of wind turbines where each item
+            is a list of x-locations for each onset wind angle
+        ylocation: list of y-coordinates of wind turbines where each item
+            is a list of y-locations for each onset wind angle
+        index: index number of turbine being checked for constraint violation
+        turbine_sep_distance: required turbine separation distance
+    Returns:
+        constraint violation flag
+    """
+    interference = False  # No constraint violated
     if index != 'pop':
         # identify turbine of interest
         xold = xlocation[index][0]
         yold = ylocation[index][0]
         # check for inerference with all other turbines
         for j, k in enumerate(xlocation):
-            if k != index:  # don't check turbine's interference with self
+            if j != index:  # don't check turbine's interference with self
                 checkx = xold - k[0]
                 checky = yold - ylocation[j][0]
                 # calculate distance between 2 turbines
@@ -45,23 +53,38 @@ def Check_Interference(xlocation, ylocation, index, turbine_sep_distance):
                 if checkrad < turbine_sep_distance:
                     interference = True
                     return interference
-    # print('interference')
-    # print(interference)
     return interference
 
 
 def translate_x(xlocation, ylocation, step_size, index, farm_x,
                 turbine_sep_distance, directions):
+    """Translate a specific turbine in the x-direction
+
+    Args:
+        xlocation: list of x-coordinates of wind turbines where each item
+            is a list of x-locations for each onset wind angle
+        ylocation: list of y-coordinates of wind turbines where each item
+            is a list of y-locations for each onset wind angle
+        step_size: distance you're moving turbine
+        index: index number of turbine
+        farm_x: length of farm in the x-direction
+        turbine_sep_distance: required turbine separation distance
+        directions: onset wind angles
+    Returns:
+        constraint violation flag
+        new turbine xlocations for each onset angle
+        new turbine ylocations for each onset angle
+    """
     transflag = False
-    xstart = xlocation[index][0]
-    # print(xstart, step_size)
+    xstart = xlocation[index]
     # find preliminary new x-location given step size
-    xfinish = xstart + step_size
-    # check for turbine interference
-    interference = Check_Interference(xlocation, ylocation, index,
-                                      turbine_sep_distance)
+    xfinish = xstart[0] + step_size
     # if this new x-location is not out of bounds,
     # and does not violate constraints, translate it
+    # check for turbine interference
+    xlocation[index] = [xfinish]
+    interference = Check_Interference(xlocation, ylocation, index,
+                                      turbine_sep_distance)
     if xfinish >= 0 and xfinish <= farm_x and not interference:
         newx = []
         newy = []
@@ -74,21 +97,40 @@ def translate_x(xlocation, ylocation, step_size, index, farm_x,
         ylocation[index] = newy
         return transflag, xlocation, ylocation  # return no error
     else:
+        xlocation[index] = xstart
         transflag = True  # return error
         return transflag, xlocation, ylocation
 
 
 def translate_y(xlocation, ylocation, step_size, index, farm_y,
                 turbine_sep_distance, directions):
+    """Translate a specific turbine in the y-direction
+
+    Args:
+        xlocation: list of x-coordinates of wind turbines where each item
+            is a list of x-locations for each onset wind angle
+        ylocation: list of y-coordinates of wind turbines where each item
+            is a list of y-locations for each onset wind angle
+        step_size: distance you're moving turbine
+        index: index number of turbine
+        farm_y: length of farm in the y-direction
+        turbine_sep_distance: required turbine separation distance
+        directions: onset wind angles
+    Returns:
+        constraint violation flag
+        new turbine xlocations for each onset angle
+        new turbine ylocations for each onset angle
+    """
     transflag = False
-    ystart = ylocation[index][0]
+    ystart = ylocation[index]
     # find preliminary new y-location given step size
-    yfinish = ystart + step_size
+    yfinish = ystart[0] + step_size
+    ylocation[index] = [yfinish]
+    # if this new x-location is not out of bounds,
+    # and does not violate constraints, translate it
     # check for turbine interference
     interference = Check_Interference(xlocation, ylocation, index,
                                       turbine_sep_distance)
-    # if this new x-location is not out of bounds,
-    # and does not violate constraints, translate it
     if yfinish >= 0 and yfinish <= farm_y and not interference:
         newx = []
         newy = []
@@ -101,11 +143,25 @@ def translate_y(xlocation, ylocation, step_size, index, farm_y,
         ylocation[index] = newy
         return transflag, xlocation, ylocation
     else:
+        ylocation[index] = ystart
         transflag = True
         return transflag, xlocation, ylocation
 
 
 def Rand_Vector(initial_num):
+    """Create random turbine order for EPS
+
+    Args:
+        initial_num: number of turbines being optimized
+    Returns:
+        random order of those turbines
+    """
+    if initial_num < 1:
+        raise ValueError('Rand_Vector: fewer than one turbine '
+                         + 'being optimized')
+    if type(initial_num) != int:
+            raise ValueError('Rand_Vector: non-integer number of '
+                             + 'turbines being optimized')
     random_vec = []
     for i in range(0, initial_num):
         random_vec.append(i)
@@ -125,14 +181,64 @@ def EPS(xlocation, ylocation, init_step, minstep,
         max_pop_tries, aif, farm_x, farm_y, turb_sep, Eval_Objective,
         Compute_Wake, Compute_Cost, probwui, rr, hh, cut_in, rated, cut_out,
         Cp, availability, nwp, extra, depth, distance_to_shore, a, directions):
+    """Extended Pattern Search
+
+    Args:
+        xlocation: list of x-coordinates of wind turbines where each item
+            is a list of x-locations for each onset wind angle
+        ylocation: list of y-coordinates of wind turbines where each item
+            is a list of y-locations for each onset wind angle
+        init_step: initial step size for EPS
+        minstep: smallest step size for EPS
+        z0: wind farm surface roughness in meters (float)
+        U0: list of onset wind speeds in m/s
+        Zref: Wind speed reference height
+        alphah: power law exponent
+        ro: air density (float)
+        yrs: lifetime of wind farm in years (float)
+        WCOE: wholesale cost of energy in USD per killowatt-hour (float)
+        num_pops: number of poor performing turbines popped each round
+        max_pop_tries: number of times a single turbine may attempt
+            a new location in the popping algorithm
+        aif: axial induction factor (float)
+        farm_x: length of wind farm in x direction in meters (float)
+        farm_y: length of wind farm in y direction in meters (float)
+        turb_sep: minimum tubine separation requirement
+        Eval_Objective: objective being minimized by EPS
+        Compute_Wake: function encapsulating wake model
+        Compute_Cost: function encapsulating cost model
+        probwui: list of lists for probability of onset wind conditions
+            first index represets onset wind direction index
+            second index represents onset wind speed index
+        rr: list of rotor radii for each turbine
+        hh: list of hub heights for each turbine
+        cut_in: turbine cut-in wind speed (float)
+        rated: turbine rated wind speed (float)
+        cut-out: turbine cut-out speed (float)
+        Cp: power coefficient (float)
+        availability: turbine availability (float)
+        nwp: whether to use the nested wake provision (True/False)
+        extra: whether to provide turbine windspeeds and total cost
+            in addition to objective and power output
+        depth: water depth in meters (float)
+        distance_to_shore: distance from farm to shore (float)
+        a: annuity factor (float)
+        directions: list of onset wind angles
+    Returns:
+        optimized turbine xlocation
+        optimized turbine ylocation
+        optimized turbine power
+        optimized objctive
+        Number of objective evaluations until convergence
+    """
+    plt.figure()
+    plt.scatter([i[0] for i in xlocation], [i[0] for i in ylocation])
     initial_num = len(xlocation)
     stopped = [0] * initial_num
     # Clear_Vectors()
     tot_evals = 0
     num_EPS_repeats = 1  # number of times you completely reset EPS
     for h in range(0, num_EPS_repeats):
-        # print('objective eval: ' + str(objective))
-        # print('h= ' + str(h))
         # develop preliminary objective for comparison purposes
         tot_evals += 1
         nomove, power = Eval_Objective(Compute_Wake, Compute_Cost, xlocation,
@@ -191,7 +297,7 @@ def EPS(xlocation, ylocation, init_step, minstep,
                                 (transflag,
                                  xlocation,
                                  ylocation) = translate_y(xlocation, ylocation,
-                                                          step2, i, farm_y,
+                                                          -step2, i, farm_y,
                                                           turb_sep, directions)
                                 innerflag = 1
                                 # print('turbine not moved up.')
@@ -208,7 +314,7 @@ def EPS(xlocation, ylocation, init_step, minstep,
                     if innerflag == 1 and not flag:
                         (transflag,
                          xlocation,
-                         ylocation) = translate_x(xlocation, ylocation, step2,
+                         ylocation) = translate_x(xlocation, ylocation, -step2,
                                                   i, farm_y, turb_sep,
                                                   directions)
                         # if the translation moved the turbine out of bounds,
@@ -256,7 +362,7 @@ def EPS(xlocation, ylocation, init_step, minstep,
                     if innerflag == 2 and not flag:
                         (transflag,
                          xlocation,
-                         ylocation) = translate_y(xlocation, ylocation, step2,
+                         ylocation) = translate_y(xlocation, ylocation, -step2,
                                                   i, farm_y, turb_sep,
                                                   directions)
                         # if the translation moved the turbine out of bounds,
@@ -338,7 +444,7 @@ def EPS(xlocation, ylocation, init_step, minstep,
                                 (transflag,
                                  xlocation,
                                  ylocation) = translate_x(xlocation, ylocation,
-                                                          step2, i, farm_y,
+                                                          -step2, i, farm_y,
                                                           turb_sep, directions)
                                 innerflag = 4
                                 # print('Turbine not moved right.')
@@ -359,14 +465,14 @@ def EPS(xlocation, ylocation, init_step, minstep,
                     if innerflag == 0 and not flag:
                         (transflag,
                          xlocation,
-                         ylocation) = translate_y(xlocation, ylocation, step2,
+                         ylocation) = translate_y(xlocation, ylocation, -step2,
                                                   i, farm_y, turb_sep,
                                                   directions)
                         # if the translation moved the turbine out of bounds,
                         # go to next translation
                         if transflag:
                             innerflag = 1  # move 1 was attempted
-                            # print('turbine not moved up.')
+                            # print('turbine not moved down.')
                         else:
                             tot_evals += 1
                             # if there is no interference, evaluate and store
@@ -407,7 +513,7 @@ def EPS(xlocation, ylocation, init_step, minstep,
                     if innerflag == 1 and not flag:
                         (transflag,
                          xlocation,
-                         ylocation) = translate_x(xlocation, ylocation, step2,
+                         ylocation) = translate_x(xlocation, ylocation, -step2,
                                                   i, farm_y, turb_sep,
                                                   directions)
                         # if the translation moved the turbine out of bounds,
@@ -463,7 +569,7 @@ def EPS(xlocation, ylocation, init_step, minstep,
                         # go to next translation
                         if transflag:
                             innerflag = 3  # move 3 was attempted
-                            print('turbine not moved down.')
+                            print('turbine not moved up.')
                         else:
                             tot_evals += 1
                             # if there is no interference, evaluate and store
@@ -488,7 +594,7 @@ def EPS(xlocation, ylocation, init_step, minstep,
                                 (transflag,
                                  xlocation,
                                  ylocation) = translate_y(xlocation, ylocation,
-                                                          step2, i, farm_y,
+                                                          -step2, i, farm_y,
                                                           turb_sep, directions)
                                 innerflag = 3
                                 print('turbine not moved down.')
@@ -538,7 +644,7 @@ def EPS(xlocation, ylocation, init_step, minstep,
                                 (transflag,
                                  xlocation,
                                  ylocation) = translate_x(xlocation, ylocation,
-                                                          step2, i, farm_y,
+                                                          -step2, i, farm_y,
                                                           turb_sep, directions)
                                 innerflag = 4
                                 print('Turbine not moved right.')
@@ -561,9 +667,9 @@ def EPS(xlocation, ylocation, init_step, minstep,
                 # all turbines have stopped moving at this step size
                 # find worst performing turbine and randomly assign elsewhere
                 for b in range(0, num_pops):
-                    print("No moves at step size "
-                          + str(step2)
-                          + " are possible. Popping weakest turbine.")
+                    # print("No moves at step size "
+                    #       + str(step2)
+                    #       + " are possible. Popping weakest turbine.")
                     min_power = 5000000.  # dummy large value for min calc
                     # create a randomly ordered vector of turbines
                     random_vec2 = Rand_Vector(initial_num)
@@ -575,70 +681,62 @@ def EPS(xlocation, ylocation, init_step, minstep,
                             min_turb = randorder
                     initialx = xlocation[min_turb]
                     initialy = ylocation[min_turb]
-                    checkx = 0
                     k = 0
                     flag = False
                     while not flag and k < max_pop_tries:
-                        checkx = 0
-                        # try random locations until one has no interference
-                        while checkx != 1:
-                            xnew = [random.uniform(0, farm_x)]
-                            ynew = [random.uniform(0, farm_y)]
-                            for rads in directions:
-                                xnew.append(np.cos(rads) * xnew[0]
-                                            - np.sin(rads) * ynew[0])
-                                ynew.append(np.sin(rads) * xnew[0]
-                                            + np.cos(rads) * ynew[0])
-                            xlocation[min_turb] = xnew
-                            ylocation[min_turb] = ynew
+                        k += 1
+                        startx = random.uniform(0, farm_x)
+                        starty = random.uniform(0, farm_y)
+                        xnew = []
+                        ynew = []
+                        for rads in directions:
+                            xnew.append(np.cos(rads) * startx
+                                        - np.sin(rads) * starty)
+                            ynew.append(np.sin(rads) * startx
+                                        + np.cos(rads) * starty)
+                        xlocation[min_turb] = xnew
+                        ylocation[min_turb] = ynew
+                        interference = Check_Interference(xlocation,
+                                                          ylocation,
+                                                          min_turb,
+                                                          turb_sep)
+                        if interference:
+                            xlocation[min_turb] = initialx
+                            ylocation[min_turb] = initialy
+                            # print('Turbine cannot be relocated without '
+                            #       + 'interference, trying agian.')
+                        else:
+                            tot_evals += 1
+                            new_eval, power = Eval_Objective(Compute_Wake,
+                                                             Compute_Cost,
+                                                             xlocation,
+                                                             ylocation,
+                                                             rr, hh, z0, U0,
+                                                             probwui, Zref,
+                                                             alphah, ro, aif,
+                                                             farm_y, cut_in,
+                                                             rated, cut_out,
+                                                             Cp, availability,
+                                                             nwp, extra, depth,
+                                                             yrs, WCOE,
+                                                             distance_to_shore,
+                                                             a)
 
-                            interference = Check_Interference(xlocation,
-                                                              ylocation,
-                                                              i, turb_sep)
-                            print(interference)
-                            if not interference:  # No interference
-                                # place turbine and exit poping loop
-                                checkx = 1
-                                print('Turbine '
-                                      + str(min_turb)
-                                      + ' has moved to a new location.')
+                            if new_eval < nomove:
+                                flag = True
+                                nomove = new_eval * 1.
+                                # NOTE: Hubheight and Rotor Radius Search are
+                                #       not implimented in this version of code
+                                #       Should you wish to add it, this would
+                                #       be an appropriate place to do so
+                                # HubHeight_Search(etc...)
+                                # print('Move has improved the evaluation.'
+                                #       + 'Continuing pattern serach.')
                             else:
                                 xlocation[min_turb] = initialx
                                 ylocation[min_turb] = initialy
-                                print('Turbine cannot be relocated without '
-                                      + 'interference, trying agian.')
-                        tot_evals += 1
-                        new_eval, power = Eval_Objective(Compute_Wake,
-                                                         Compute_Cost,
-                                                         xlocation,
-                                                         ylocation,
-                                                         rr, hh, z0, U0,
-                                                         probwui, Zref,
-                                                         alphah, ro, aif,
-                                                         farm_y, cut_in,
-                                                         rated, cut_out, Cp,
-                                                         availability,
-                                                         nwp, extra, depth,
-                                                         yrs, WCOE,
-                                                         distance_to_shore, a)
-
-                        # Clear_Vectors()
-                        if new_eval < nomove:
-                            flag = True
-                            nomove = new_eval * 1.
-                            # NOTE: Hubheight and Rotor Radius Search are
-                            #       not implimented in this version of code
-                            #       Should you wish to add it, this would
-                            #       be an appropriate place to do so
-                            # HubHeight_Search(etc...)
-                            print('Move has improved the evaluation.'
-                                  + 'Continuing pattern serach.')
-                        else:
-                            xlocation[min_turb] = initialx
-                            ylocation[min_turb] = initialy
-                            print('Move did not improve evaluation.'
-                                  + 'Trying new moves.')
-                        k += 1
+                                # print('Move did not improve evaluation.'
+                                #       + 'Trying new moves.')
                 # halving step size
                 step2 = step2 / 2.0
     return xlocation, ylocation, power, nomove, tot_evals
@@ -649,9 +747,59 @@ def EPS_disc(xlocation, ylocation, init_step, minstep, z0, U0, Zref,
              farm_y, turb_sep, Eval_Objective, Compute_Wake, Compute_Cost,
              probwui, rr, hh, cut_in, rated, cut_out, Cp, availability, nwp,
              extra, depth, distance_to_shore, a, directions, mesh_width):
+    """Discretized Extended Pattern Search
+
+    Args:
+        xlocation: list of x-coordinates of wind turbines where each item
+            is a list of x-locations for each onset wind angle
+        ylocation: list of y-coordinates of wind turbines where each item
+            is a list of x-locations for each onset wind angle
+        init_step: initial step size for EPS
+        minstep: smallest step size for EPS
+        z0: wind farm surface roughness in meters (float)
+        U0: list of onset wind speeds in m/s
+        Zref: Wind speed reference height
+        alphah: power law exponent
+        ro: air density (float)
+        yrs: lifetime of wind farm in years (float)
+        WCOE: wholesale cost of energy in USD per killowatt-hour (float)
+        num_pops: number of poor performing turbines popped each round
+        max_pop_tries: number of times a single turbine may attempt
+            a new location in the popping algorithm
+        aif: axial induction factor (float)
+        farm_x: length of wind farm in x direction in meters (float)
+        farm_y: length of wind farm in y direction in meters (float)
+        turb_sep: minimum tubine separation requirement
+        Eval_Objective: objective being minimized by EPS
+        Compute_Wake: function encapsulating wake model
+        Compute_Cost: function encapsulating cost model
+        probwui: list of lists for probability of onset wind conditions
+            first index represets onset wind direction index
+            second index represents onset wind speed index
+        rr: list of rotor radii for each turbine
+        hh: list of hub heights for each turbine
+        cut_in: turbine cut-in wind speed (float)
+        rated: turbine rated wind speed (float)
+        cut-out: turbine cut-out speed (float)
+        Cp: power coefficient (float)
+        availability: turbine availability (float)
+        nwp: whether to use the nested wake provision (True/False)
+        extra: whether to provide turbine windspeeds and total cost
+            in addition to objective and power output
+        depth: water depth in meters (float)
+        distance_to_shore: distance from farm to shore (float)
+        a: annuity factor (float)
+        directions: list of onset wind angles
+    Returns:
+        optimized turbine xlocation
+        optimized turbine ylocation
+        optimized turbine power
+        optimized objctive
+        Number of objective evaluations until convergence
+    """
     initial_num = len(xlocation)
     eval_ct = 0
-    Stopped = [0 for i in initial_num]
+    Stopped = [0 for i in range(initial_num)]
     for h in range(0, 1):
         nomove, power = Eval_Objective(Compute_Wake, Compute_Cost, xlocation,
                                        ylocation, rr, hh, z0, U0, probwui,
@@ -659,8 +807,16 @@ def EPS_disc(xlocation, ylocation, init_step, minstep, z0, U0, Zref,
                                        rated, cut_out, Cp, availability,
                                        nwp, extra, depth, yrs, WCOE,
                                        distance_to_shore, a)
-        x_opts = int(farm_x / mesh_width) + 1
-        y_opts = int(farm_y / mesh_width) + 1
+        if farm_x % mesh_width == 0:
+            # if space is evenly divisable by mesh size, add one point to
+            # account for both edges
+            x_opts = int(farm_x / mesh_width) + 1
+            y_opts = int(farm_y / mesh_width) + 1
+        else:
+            # if space is not evenly divisable by mesh size, do not add point
+            # because the final point will be outside the farm space
+            x_opts = int(farm_x / mesh_width)
+            y_opts = int(farm_y / mesh_width)
         eval_ct += 1
 
         step2 = init_step * mesh_width
@@ -670,7 +826,7 @@ def EPS_disc(xlocation, ylocation, init_step, minstep, z0, U0, Zref,
             for j in range(0, len(random_vec)):
                 i = random_vec[j]
                 Stopped[i] = 0
-                # print('Turbine ', i,' is being tested.', nomove)
+                # print('Turbine ', i, ' is being tested.', nomove)
                 flag = 0
                 innerflag = 0
                 transflag = 0
@@ -684,126 +840,102 @@ def EPS_disc(xlocation, ylocation, init_step, minstep, z0, U0, Zref,
                                                                   farm_y,
                                                                   turb_sep,
                                                                   directions)
-                    CHECK2 = 0
                     if transflag == 1:
                         # if the translation moved the turbine out of bounds,
                         # go to next translation
                         innerflag = 1
                         # move2 was attempted
-                        # print('turbine not moved up. out of bounds')
+                        # print('turbine not moved up. '
+                        #       + 'Out of bounds or interference')
                     else:
-                        CHECK2 = Check_Interference(xlocation, ylocation,
-                                                    i, step2)
-                        if CHECK2 == 1:
-                            # if interference occurs, move the turbine back,
-                            # go to next translation
+                        # if there is no interference, evaluate and store
+                        move2, power = Eval_Objective(Compute_Wake,
+                                                      Compute_Cost,
+                                                      xlocation,
+                                                      ylocation,
+                                                      rr, hh, z0, U0,
+                                                      probwui, Zref,
+                                                      alphah, ro, aif,
+                                                      farm_y, cut_in,
+                                                      rated, cut_out, Cp,
+                                                      availability,
+                                                      nwp, extra, depth,
+                                                      yrs, WCOE,
+                                                      distance_to_shore, a)
+                        eval_ct += 1
+                        if move2 >= nomove:
+                            # if evaluation is worse than initial,
+                            # move back, go to next translation
                             (transflag,
                              xlocation,
                              ylocation) = translate_y(xlocation, ylocation,
-                                                      step2, i, farm_y,
+                                                      -step2, i, farm_y,
                                                       turb_sep, directions)
                             innerflag = 1
+                            # print('turbine not moved up. Worse Evaluation')
                         else:
-                            # if there is no interference, evaluate and store
-                            move2, power = Eval_Objective(Compute_Wake,
-                                                          Compute_Cost,
-                                                          xlocation,
-                                                          ylocation,
-                                                          rr, hh, z0, U0,
-                                                          probwui, Zref,
-                                                          alphah, ro, aif,
-                                                          farm_y, cut_in,
-                                                          rated, cut_out, Cp,
-                                                          availability,
-                                                          nwp, extra, depth,
-                                                          yrs, WCOE,
-                                                          distance_to_shore, a)
-                            eval_ct += 1
-                            if move2 >= nomove:
-                                # if evaluation is worse than initial,
-                                # move back, go to next translation
-                                (transflag,
-                                 xlocation,
-                                 ylocation) = translate_y(xlocation, ylocation,
-                                                          step2, i, farm_y,
-                                                          turb_sep, directions)
-                                innerflag = 1
-                                # print('turbine not moved up. ')
-                            else:
-                                # evaluation is better, keep move,
-                                # go to next turbine
-                                flag = 1
-                                nomove = move2 * 1.
-                                # print('turbine ', i, ' moved up.', move2)
-                                # print(nomove)
-                                # HubHeight_Search(etc...)
+                            # evaluation is better, keep move,
+                            # go to next turbine
+                            flag = 1
+                            nomove = move2 * 1.
+                            # print('turbine ', i, ' moved up.', move2)
+                            # print('new y-location: ', ylocation[i])
+                            # print(nomove)
+                            # HubHeight_Search(etc...)
                 if innerflag == 1 and flag == 0:
                     # move 2 was just unsucessfully attempted
                     (transflag,
                      xlocation,
-                     ylocation) = translate_x(xlocation, ylocation, step2,
+                     ylocation) = translate_x(xlocation, ylocation, -step2,
                                               i, farm_y, turb_sep, directions)
-                    CHECK2 = 0
                     if transflag == 1:
                         # if the translation moved the turbine out of bounds,
                         # go to next translation
                         innerflag = 2
                         # move3 was attempted
-                        # print('turbine not left. out of bounds')
+                        # print('turbine not moved left. out of bounds')
                     else:
-                        CHECK2 = Check_Interference(xlocation, ylocation,
-                                                    i, step2)
-                        if CHECK2 == 1:
-                            # if interference occurs, move the turbine back,
-                            # go to next translation
+                        # if there is no interference, evaluate and store
+                        move3, power = Eval_Objective(Compute_Wake,
+                                                      Compute_Cost,
+                                                      xlocation,
+                                                      ylocation,
+                                                      rr, hh, z0, U0,
+                                                      probwui, Zref,
+                                                      alphah, ro, aif,
+                                                      farm_y, cut_in,
+                                                      rated, cut_out, Cp,
+                                                      availability,
+                                                      nwp, extra, depth,
+                                                      yrs, WCOE,
+                                                      distance_to_shore, a)
+                        eval_ct += 1
+                        if move3 >= nomove:
+                            # if evaluation is worse than initial,
+                            # move back, go to next translation
                             (transflag,
                              xlocation,
                              ylocation) = translate_x(xlocation, ylocation,
                                                       step2, i, farm_y,
                                                       turb_sep, directions)
                             innerflag = 2
+                            # print('turbine not moved left. Worse Evaluation')
                         else:
-                            # if there is no interference, evaluate and store
-                            move3, power = Eval_Objective(Compute_Wake,
-                                                          Compute_Cost,
-                                                          xlocation,
-                                                          ylocation,
-                                                          rr, hh, z0, U0,
-                                                          probwui, Zref,
-                                                          alphah, ro, aif,
-                                                          farm_y, cut_in,
-                                                          rated, cut_out, Cp,
-                                                          availability,
-                                                          nwp, extra, depth,
-                                                          yrs, WCOE,
-                                                          distance_to_shore, a)
-                            eval_ct += 1
-                            if move3 >= nomove:
-                                # if evaluation is worse than initial,
-                                # move back, go to next translation
-                                (transflag,
-                                 xlocation,
-                                 ylocation) = translate_x(xlocation, ylocation,
-                                                          step2, i, farm_y,
-                                                          turb_sep, directions)
-                                innerflag = 2
-                                # print('turbine not moved left.')
-                            else:
-                                # evaluation is better, keep move,
-                                # go to next turbine
-                                flag = 1
-                                nomove = move3 * 1.
-                                # print('turbine ', i, ' moved left.', move3)
-                                # print(nomove)
-                                # HubHeight_Search(etc...)
+                            # evaluation is better, keep move,
+                            # go to next turbine
+                            flag = 1
+                            nomove = move3 * 1.
+                            # print('turbine ', i, ' moved left.', move3)
+                            # print('new x-location: ', xlocation[i])
+                            # print(nomove)
+                            # HubHeight_Search(etc...)
 
                 if innerflag == 2 and flag == 0:
                     # move 3 was just unsucessfully attempted
                     (transflag,
                      xlocation,
-                     ylocation) = translate_y(xlocation, ylocation, step2,
+                     ylocation) = translate_y(xlocation, ylocation, -step2,
                                               i, farm_y, turb_sep, directions)
-                    CHECK2 = 0
                     if transflag == 1:
                         # if the translation moved the turbine out of bounds,
                         # go to next translation
@@ -811,58 +943,45 @@ def EPS_disc(xlocation, ylocation, init_step, minstep, z0, U0, Zref,
                         # move3 was attempted
                         # print('turbine not moved down. out of bounds')
                     else:
-                        CHECK2 = Check_Interference(xlocation, ylocation,
-                                                    i, step2)
-                        if CHECK2 == 1:
-                            # if interference occurs, move the turbine back,
-                            # go to next translation
+                        # if there is no interference, evaluate and store
+                        move4, power = Eval_Objective(Compute_Wake,
+                                                      Compute_Cost,
+                                                      xlocation,
+                                                      ylocation,
+                                                      rr, hh, z0, U0,
+                                                      probwui, Zref,
+                                                      alphah, ro, aif,
+                                                      farm_y, cut_in,
+                                                      rated, cut_out, Cp,
+                                                      availability,
+                                                      nwp, extra, depth,
+                                                      yrs, WCOE,
+                                                      distance_to_shore, a)
+                        eval_ct += 1
+                        if move4 >= nomove:
+                            # if evaluation is worse than initial,
+                            # move back, go to next translation
                             (transflag,
                              xlocation,
                              ylocation) = translate_y(xlocation, ylocation,
                                                       step2, i, farm_y,
                                                       turb_sep, directions)
                             innerflag = 3
-                            # print('turbine not moved down. interference')
+                            # print('turbine not moved down.')
                         else:
-                            # if there is no interference, evaluate and store
-                            move4, power = Eval_Objective(Compute_Wake,
-                                                          Compute_Cost,
-                                                          xlocation,
-                                                          ylocation,
-                                                          rr, hh, z0, U0,
-                                                          probwui, Zref,
-                                                          alphah, ro, aif,
-                                                          farm_y, cut_in,
-                                                          rated, cut_out, Cp,
-                                                          availability,
-                                                          nwp, extra, depth,
-                                                          yrs, WCOE,
-                                                          distance_to_shore, a)
-                            eval_ct += 1
-                            if move4 >= nomove:
-                                # if evaluation is worse than initial,
-                                # move back, go to next translation
-                                (transflag,
-                                 xlocation,
-                                 ylocation) = translate_y(xlocation, ylocation,
-                                                          step2, i, farm_y,
-                                                          turb_sep, directions)
-                                innerflag = 3
-                                # print('turbine not moved down.')
-                            else:
-                                # evaluation is better, keep move,
-                                # go to next turbine
-                                flag = 1
-                                nomove = move4 * 1.
-                                # print(nomove)
-                                # print('turbine ', i, ' moved down.', move4)
-                                # HubHeight_Search(etc...)
+                            # evaluation is better, keep move,
+                            # go to next turbine
+                            flag = 1
+                            nomove = move4 * 1.
+                            # print(nomove)
+                            # print('turbine ', i, ' moved down.', move4)
+                            # print('new y-location: ', ylocation[i])
+                            # HubHeight_Search(etc...)
                 if innerflag == 3 and flag == 0:
                     (transflag,
                      xlocation,
                      ylocation) = translate_x(xlocation, ylocation, step2, i,
                                               farm_y, turb_sep, directions)
-                    CHECK2 = 0
                     if transflag == 1:
                         # if the translation moved the turbine out of bounds,
                         # go to next translation
@@ -871,57 +990,43 @@ def EPS_disc(xlocation, ylocation, init_step, minstep, z0, U0, Zref,
                         # print('Turbine not moved right. out of bounds')
 
                     else:
-                        # if there is the turbine is in bounds,
-                        # evaluate and store
-                        CHECK2 = Check_Interference(xlocation, ylocation,
-                                                    i, step2)
-                        if CHECK2 == 1:
-                            # if interference occurs, move the turbine back ,
-                            # go to next translation
+                        # if there is no interference, evaluate and store
+                        move1, power = Eval_Objective(Compute_Wake,
+                                                      Compute_Cost,
+                                                      xlocation,
+                                                      ylocation,
+                                                      rr, hh, z0, U0,
+                                                      probwui, Zref,
+                                                      alphah, ro, aif,
+                                                      farm_y, cut_in,
+                                                      rated, cut_out, Cp,
+                                                      availability,
+                                                      nwp, extra, depth,
+                                                      yrs, WCOE,
+                                                      distance_to_shore, a)
+                        eval_ct += 1
+                        if move1 >= nomove:
+                            # if evaluation is worse than initial,
+                            # move back, go to next translation
                             (transflag,
                              xlocation,
-                             ylocation) = translate_x(xlocation, ylocation,
-                                                      step2, i, farm_y,
-                                                      turb_sep, directions)
+                             ylocation) = translate_x(xlocation,
+                                                      ylocation,
+                                                      -step2,
+                                                      i,
+                                                      farm_y,
+                                                      turb_sep,
+                                                      directions)
                             innerflag = 4
-                            # print('turbine not moved right, interference')
+                            # print('Turbine not moved right.')
                         else:
-                            # if there is no interference, evaluate and store
-                            move1, power = Eval_Objective(Compute_Wake,
-                                                          Compute_Cost,
-                                                          xlocation,
-                                                          ylocation,
-                                                          rr, hh, z0, U0,
-                                                          probwui, Zref,
-                                                          alphah, ro, aif,
-                                                          farm_y, cut_in,
-                                                          rated, cut_out, Cp,
-                                                          availability,
-                                                          nwp, extra, depth,
-                                                          yrs, WCOE,
-                                                          distance_to_shore, a)
-                            eval_ct += 1
-                            if move1 >= nomove:
-                                # if evaluation is worse than initial,
-                                # move back, go to next translation
-                                (transflag,
-                                 xlocation,
-                                 ylocation) = translate_x(xlocation,
-                                                          ylocation,
-                                                          step2,
-                                                          i,
-                                                          farm_y,
-                                                          turb_sep,
-                                                          directions)
-                                innerflag = 4
-                                # print('Turbine not moved right.')
-                            else:
-                                flag = 1
-                                # signifies movement was kept
-                                nomove = move1 * 1.
-                                # print('turbine ', i, ' moved right.', move1)
-                                # print(nomove)
-                            # HubHeight_Search(etc...)
+                            flag = 1
+                            # signifies movement was kept
+                            nomove = move1 * 1.
+                            # print('turbine ', i, ' moved right.', move1)
+                            # print('new x-location: ', xlocation[i])
+                            # print(nomove)
+                        # HubHeight_Search(etc...)
 
                 if innerflag == 4 and flag == 0:
                     # translation at this step size has resulted in no moves
@@ -932,14 +1037,17 @@ def EPS_disc(xlocation, ylocation, init_step, minstep, z0, U0, Zref,
             # exit current step size
             for i in range(0, initial_num):
                 exit_css += Stopped[i]
-            # print(exit_css)
-
+            print(exit_css)
             if exit_css == initial_num:
+                plt.figure()
+                plt.scatter(xlocation, ylocation)
+                for i in range(len(xlocation)):
+                    plt.annotate(i, (xlocation[i][0], ylocation[i][0]))
                 # all turbines have stopped moving at this step size,
                 # halving step size.
                 # find worst performing turbine and randomly assign elsewhere
-                # print("No moves at step size ", step2, " are possible.
-                # Popping weakest turbine.")
+                # print("No moves at step size ", step2, " are possible. "
+                #       + "Popping weakest turbine.")
                 for b in range(0, num_pops):
                     min_power = 5000000.
                     # initialized to first turbine power output
@@ -954,60 +1062,63 @@ def EPS_disc(xlocation, ylocation, init_step, minstep, z0, U0, Zref,
 
                     initialx = xlocation[min_turb]
                     initialy = ylocation[min_turb]
-                    checkx = 0
                     k = 0
                     flag = 0
                     while flag == 0 and k < max_pop_tries:
-                        checkx = 0
-                        while checkx != 1:
-                            # will try random locations until one has no
-                            # interference
-                            CHECK2 = 0
-                            newx = [(int(random.uniform(0, x_opts))
-                                     * mesh_width)]
-                            newy = [(int(random.uniform(0, y_opts))
-                                     * mesh_width)]
-                            CHECK2 = Check_Interference(xlocation, ylocation,
-                                                        min_turb, step2)
-                            if CHECK2 != 1:
-                                # No interference
-                                checkx = 1
-                                # place turbine and exit poping loop
-                                for j in range(1, len(directions)):
-                                    theta = directions[j]
-                                    newx.append((newx[0] * np.cos(theta))
-                                                - (newy[0] * np.sin(theta)))
-                                    newy.append((newx[0] * np.sin(theta))
-                                                + (newy[0] * np.cos(theta)))
-                                xlocation[min_turb] = newx
-                                ylocation[min_turb] = newy
+                        k += 1
+                        # will try random locations until one has no
+                        # interference
+                        newx = [(int(random.uniform(0, x_opts))
+                                 * mesh_width)]
+                        newy = [(int(random.uniform(0, y_opts))
+                                 * mesh_width)]
+                        xlocation[min_turb] = newx
+                        ylocation[min_turb] = newy
+                        interference = Check_Interference(xlocation,
+                                                          ylocation,
+                                                          min_turb,
+                                                          turb_sep)
+                        if not interference:
+                            # No interference
+                            # place turbine and exit poping loop
+                            for j in range(1, len(directions)):
+                                theta = directions[j]
+                                newx.append((newx[0] * np.cos(theta))
+                                            - (newy[0] * np.sin(theta)))
+                                newy.append((newx[0] * np.sin(theta))
+                                            + (newy[0] * np.cos(theta)))
+                            xlocation[min_turb] = newx
+                            ylocation[min_turb] = newy
 
-                        new_eval, power = Eval_Objective(Compute_Wake,
-                                                         Compute_Cost,
-                                                         xlocation,
-                                                         ylocation,
-                                                         rr, hh, z0, U0,
-                                                         probwui, Zref,
-                                                         alphah, ro, aif,
-                                                         farm_y, cut_in,
-                                                         rated, cut_out, Cp,
-                                                         availability,
-                                                         nwp, extra, depth,
-                                                         yrs, WCOE,
-                                                         distance_to_shore, a)
-                        eval_ct += 1
-                        if new_eval < nomove:
-                            flag = 1
-                            nomove = new_eval * 1.
-                            # keep eval
-                            # HubHeight_Search(etc...)
-                            # print('Move has improved the evaluation')
-                            # print(nomove)
+                            new_eval, power = Eval_Objective(Compute_Wake,
+                                                             Compute_Cost,
+                                                             xlocation,
+                                                             ylocation,
+                                                             rr, hh, z0, U0,
+                                                             probwui, Zref,
+                                                             alphah, ro, aif,
+                                                             farm_y, cut_in,
+                                                             rated, cut_out,
+                                                             Cp, availability,
+                                                             nwp, extra, depth,
+                                                             yrs, WCOE,
+                                                             distance_to_shore,
+                                                             a)
+                            eval_ct += 1
+                            if new_eval < nomove:
+                                flag = 1
+                                nomove = new_eval * 1.
+                                # keep eval
+                                # HubHeight_Search(etc...)
+                                # print('Move has improved the evaluation')
+                                # print(nomove)
+                            else:
+                                xlocation[min_turb] = initialx
+                                ylocation[min_turb] = initialy
                         else:
                             xlocation[min_turb] = initialx
                             ylocation[min_turb] = initialy
                             # print('Move did not improve evaluation.')
-                        k += 1
                 if init_step > 1. and init_step < 2.:
                     # make sure it tries one mesh distance
                     init_step = int(1)
@@ -1020,6 +1131,25 @@ def EPS_disc(xlocation, ylocation, init_step, minstep, z0, U0, Zref,
 
 def translate_chromosome(chromosome, binary_x, options_x,
                          binary_y, options_y, mesh_size, directions):
+    """Translate binary chromosome to cardinal coordinates
+
+    Args:
+        chromosome: binary list to be converted to turbine layout
+        binary_x: number of binary values in an x-coordinate
+        options_x: number of positions a turbine can take in the x-direction
+        binary_y: number of binary values in a y-coordinate
+        options_y: number of positions a turbine can take in the y-direction
+        mesh_size: width of square of mesh
+        directions: onset wind angles
+    Returns:
+        xlocations of chromosome from every onset angle
+        ylocations of chromosome from every onset angle
+    """
+    for i in list(set(chromosome)):
+        if i != 0 and i != 1:
+            raise ValueError('chromosome composed of values other '
+                             + 'than 1 and 0')
+
     x = []  # xlocs
     y = []  # ylocs
     k = 0  # actual gene you're on
@@ -1075,11 +1205,58 @@ def translate_chromosome(chromosome, binary_x, options_x,
 
 
 def GA(mesh_size, elite, mateable_range, mutation_rate,
-       z0, U0, Zref, alphah, ro, yrs, WCOE, condition, population_size,
+       z0, U0, Zref, alphah, ro, yrs, WCOE, population_size,
        generations_to_converge, aif, farm_x, farm_y, turb_sep, Eval_Objective,
-       wind_directions, Compute_Wake, Compute_Cost, probwui, rr, hh, cut_in,
+       Compute_Wake, Compute_Cost, probwui, rr, hh, cut_in,
        rated, cut_out, Cp, availability, nwp, extra, depth,
        distance_to_shore, a, directions):
+    """Genetic Algorithm
+
+    Args:
+        mesh_size: width of mesh for GA
+        elite: proportion of best chromosomes copied from last generation
+        mateable_range: proportion of best chromosomes that are allowed to mate
+        z0: wind farm surface roughness in meters (float)
+        U0: list of onset wind speeds in m/s
+        Zref: Wind speed reference height
+        alphah: power law exponent
+        ro: air density (float)
+        yrs: lifetime of wind farm in years (float)
+        WCOE: wholesale cost of energy in USD per killowatt-hour (float)
+        population_size: population size
+        generations_to_convergence: number of generations with same best layout
+            before algorithm is considered converged
+        aif: axial induction factor (float)
+        farm_x: length of wind farm in x direction in meters (float)
+        farm_y: length of wind farm in y direction in meters (float)
+        turb_sep: minimum tubine separation requirement
+        Eval_Objective: objective being minimized by EPS
+        Compute_Wake: function encapsulating wake model
+        Compute_Cost: function encapsulating cost model
+        probwui: list of lists for probability of onset wind conditions
+            first index represets onset wind direction index
+            second index represents onset wind speed index
+        rr: list of rotor radii for each turbine
+        hh: list of hub heights for each turbine
+        cut_in: turbine cut-in wind speed (float)
+        rated: turbine rated wind speed (float)
+        cut-out: turbine cut-out speed (float)
+        Cp: power coefficient (float)
+        availability: turbine availability (float)
+        nwp: whether to use the nested wake provision (True/False)
+        extra: whether to provide turbine windspeeds and total cost
+            in addition to objective and power output
+        depth: water depth in meters (float)
+        distance_to_shore: distance from farm to shore (float)
+        a: annuity factor (float)
+        directions: list of onset wind angles
+    Returns:
+        optimized turbine xlocation
+        optimized turbine ylocation
+        optimized turbine power
+        optimized objctive
+        Number of objective evaluations until convergence
+    """
     if farm_x % mesh_size != 0 or farm_y % mesh_size != 0:
         raise ValueError('error: one or more farm dimension is not '
                          + 'evenly divisible by the mesh size')
@@ -1208,6 +1385,55 @@ def PSO(self_weight, global_weight, swarm_size, initial_num,
         WCOE, Compute_Wake, Compute_Cost, probwui, rr, hh, cut_in, rated,
         cut_out, Cp, availability, nwp, extra, depth, distance_to_shore,
         a, directions):
+    """Compute the total cost of a farm
+
+    Args:
+        self_weight: weight given to individual's best past evaluation
+        global_weight: weight given to the swarm's best past evaulation
+        swarm_size: number of individuals in the swarm
+        initial_num: number of turbines being optimized
+        farm_x: length of wind farm in x direction in meters (float)
+        farm_y: length of wind farm in y direction in meters (float)
+        turb_sep: minimum tubine separation requirement
+        generations_to_converge: number of generations without improvement
+            before algorithm is considered converged
+        Eval_Objective: objective being minimized by EPS
+        constraint_scale: the weight given to constraint violations in
+            calculating the objective evaluation
+        z0: wind farm surface roughness in meters (float)
+        U0: list of onset wind speeds in m/s
+        Zref: Wind speed reference height
+        alphah: power law exponent
+        ro: air density (float)
+        aif: axial induction factor (float)
+        yrs: lifetime of wind farm in years (float)
+        WCOE: wholesale cost of energy in USD per killowatt-hour (float)
+        Compute_Wake: function encapsulating wake model
+        Compute_Cost: function encapsulating cost model
+        probwui: list of lists for probability of onset wind conditions
+            first index represets onset wind direction index
+            second index represents onset wind speed index
+        rr: list of rotor radii for each turbine
+        hh: list of hub heights for each turbine
+        cut_in: turbine cut-in wind speed (float)
+        rated: turbine rated wind speed (float)
+        cut-out: turbine cut-out speed (float)
+        Cp: power coefficient (float)
+        availability: turbine availability (float)
+        nwp: whether to use the nested wake provision (True/False)
+        extra: whether to provide turbine windspeeds and total cost
+            in addition to objective and power output
+        depth: water depth in meters (float)
+        distance_to_shore: distance from farm to shore (float)
+        a: annuity factor (float)
+        directions: list of onset wind angles
+    Returns:
+        optimized turbine xlocation
+        optimized turbine ylocation
+        optimized turbine power
+        optimized objctive
+        Number of objective evaluations until convergence
+    """
     evals = 0
     # create random layouts for swarm members
     current_x = []  # population x-coordinates
